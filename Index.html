@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timer & Punkte</title>
+<style>
+:root{--bg:#0b1020;--card:#151c31;--card2:#1c2640;--text:#f5f7ff;--muted:#9ba7c2;--accent:#6c8cff;--danger:#ff5d73;--green:#43d19e}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:linear-gradient(135deg,#080c18,#111a32);color:var(--text);min-height:100vh}
+.container{max-width:1100px;margin:auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}
+h1{margin:0;font-size:30px}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:20px}
+.card{background:rgba(21,28,49,.92);border:1px solid #293452;border-radius:20px;padding:20px;box-shadow:0 15px 40px rgba(0,0,0,.25)}
+label{display:block;color:var(--muted);font-size:13px;margin:0 0 7px}
+input,button{font:inherit}
+input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #34415f;background:#0e1528;color:white;outline:none}
+input:focus{border-color:var(--accent)}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+button{border:0;border-radius:12px;padding:11px 15px;font-weight:700;cursor:pointer;background:var(--accent);color:white}
+button.secondary{background:#293452}
+button.danger{background:var(--danger)}
+button.green{background:var(--green);color:#071b14}
+button:disabled{opacity:.45;cursor:not-allowed}
+.timer{text-align:center;padding:22px 10px}
+.time{font-variant-numeric:tabular-nums;font-size:64px;font-weight:800;letter-spacing:2px;margin:8px 0 18px}
+.quick{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-bottom:18px}
+.quick button{padding:8px 12px;font-size:13px}
+.players{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.player{background:var(--card2);border:1px solid #2c3855;border-radius:16px;padding:16px}
+.player-top{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.name{font-size:18px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.score{font-size:30px;font-weight:800;margin:10px 0}
+.actions{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.actions button{padding:8px 5px;font-size:14px}
+.small{color:var(--muted);font-size:12px}
+.add{margin-top:14px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.players{grid-template-columns:1fr}.time{font-size:52px}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>⏱️ Timer & Punkte</h1>
+  <button class="secondary" id="resetAll">Alles zurücksetzen</button>
+</header>
+
+<div class="grid">
+<section class="card">
+  <h2>Timer</h2>
+  <div class="row">
+    <div>
+      <label>Minuten</label>
+      <input id="minutes" type="number" min="0" step="1" value="5">
+    </div>
+    <div>
+      <label>Sekunden</label>
+      <input id="seconds" type="number" min="0" max="59" step="1" value="0">
+    </div>
+  </div>
+
+  <div class="timer">
+    <div class="time" id="display">05:00</div>
+    <div class="quick">
+      <button class="secondary" data-time="30">30 s</button>
+      <button class="secondary" data-time="60">1 min</button>
+      <button class="secondary" data-time="300">5 min</button>
+      <button class="secondary" data-time="600">10 min</button>
+      <button class="secondary" data-time="1800">30 min</button>
+    </div>
+    <div class="row">
+      <button id="start">Start</button>
+      <button id="pause" class="secondary">Pause</button>
+      <button id="stop" class="danger">Stopp</button>
+    </div>
+  </div>
+  <div class="small">Du kannst jede beliebige Dauer einstellen. Der Timer läuft auch weiter, wenn die Anzeige kurz im Hintergrund ist.</div>
+</section>
+
+<section class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <div>
+      <h2 style="margin:0">Spieler</h2>
+      <div class="small" id="count">0 / 10 Spieler</div>
+    </div>
+    <button id="addPlayer" class="green">+ Spieler</button>
+  </div>
+  <div class="players" id="players"></div>
+</section>
+</div>
+</div>
+
+<script>
+let totalSeconds = 300;
+let remaining = totalSeconds;
+let timerId = null;
+let endTime = null;
+let players = [];
+
+const $ = id => document.getElementById(id);
+const display = $('display');
+
+function formatTime(sec){
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec/3600);
+  const m = Math.floor((sec%3600)/60);
+  const s = sec%60;
+  return h > 0
+    ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+function renderTime(){ display.textContent = formatTime(remaining); }
+
+function getInputSeconds(){
+  const m = Math.max(0, parseInt($('minutes').value) || 0);
+  const s = Math.max(0, Math.min(59, parseInt($('seconds').value) || 0));
+  return m*60+s;
+}
+function setTime(sec){
+  pauseTimer();
+  totalSeconds = Math.max(0, Math.floor(sec));
+  remaining = totalSeconds;
+  $('minutes').value = Math.floor(totalSeconds/60);
+  $('seconds').value = totalSeconds%60;
+  renderTime();
+}
+function startTimer(){
+  if(timerId) return;
+  if(remaining <= 0) remaining = getInputSeconds();
+  if(remaining <= 0) return;
+  endTime = Date.now() + remaining*1000;
+  timerId = setInterval(()=>{
+    remaining = Math.max(0, Math.ceil((endTime-Date.now())/1000));
+    renderTime();
+    if(remaining <= 0){
+      pauseTimer();
+      if(navigator.vibrate) navigator.vibrate([250,100,250]);
+      document.title = "⏰ Zeit abgelaufen!";
+    }
+  },200);
+  document.title = "⏱️ Timer läuft";
+}
+function pauseTimer(){
+  if(timerId){
+    clearInterval(timerId);
+    timerId = null;
+  }
+  if(endTime){
+    remaining = Math.max(0, Math.ceil((endTime-Date.now())/1000));
+    endTime = null;
+    renderTime();
+  }
+  document.title = "Timer & Punkte";
+}
+function stopTimer(){ pauseTimer(); remaining=0; renderTime(); }
+
+$('minutes').addEventListener('input',()=>{
+  if(!timerId) setTime(getInputSeconds());
+});
+$('seconds').addEventListener('input',()=>{
+  if(!timerId) setTime(getInputSeconds());
+});
+document.querySelectorAll('[data-time]').forEach(btn=>{
+  btn.addEventListener('click',()=>setTime(Number(btn.dataset.time)));
+});
+$('start').onclick=startTimer;
+$('pause').onclick=pauseTimer;
+$('stop').onclick=stopTimer;
+
+function save(){ localStorage.setItem('timerPlayers',JSON.stringify(players)); }
+function renderPlayers(){
+  $('players').innerHTML='';
+  $('count').textContent=`${players.length} / 10 Spieler`;
+  players.forEach((p,i)=>{
+    const el=document.createElement('div');
+    el.className='player';
+    el.innerHTML=`
+      <div class="player-top">
+        <div class="name">${escapeHtml(p.name)}</div>
+        <button class="danger" data-remove="${i}" style="padding:7px 10px">×</button>
+      </div>
+      <div class="score">${p.score} Punkte</div>
+      <div class="actions">
+        <button class="green" data-add="${i}" data-points="1">+1</button>
+        <button class="green" data-add="${i}" data-points="5">+5</button>
+        <button class="green" data-add="${i}" data-points="10">+10</button>
+        <button class="secondary" data-add="${i}" data-points="-1">−1</button>
+      </div>`;
+    $('players').appendChild(el);
+  });
+  document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
+    const i=Number(b.dataset.add);
+    players[i].score += Number(b.dataset.points);
+    renderPlayers(); save();
+  });
+  document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{
+    players.splice(Number(b.dataset.remove),1);
+    renderPlayers(); save();
+  });
+}
+function escapeHtml(str){
+  return str.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
+$('addPlayer').onclick=()=>{
+  if(players.length>=10) return alert('Maximal 10 Spieler sind möglich.');
+  const name=prompt(`Name für Spieler ${players.length+1}:`);
+  if(name && name.trim()){
+    players.push({name:name.trim(),score:0});
+    renderPlayers(); save();
+  }
+};
+$('resetAll').onclick=()=>{
+  if(confirm('Timer und alle Spieler wirklich zurücksetzen?')){
+    pauseTimer();
+    players=[];
+    setTime(300);
+    renderPlayers(); save();
+  }
+};
+
+try { players=JSON.parse(localStorage.getItem('timerPlayers'))||[]; } catch(e){players=[];}
+renderPlayers();
+renderTime();
+</script>
+</body>
+</html>
